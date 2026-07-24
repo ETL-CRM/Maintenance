@@ -243,8 +243,8 @@ const LOGO_FULL_B64 = "iVBORw0KGgoAAAANSUhEUgAAAggAAAGOCAIAAAB9n2xsAAABCGlDQ1BJQ
 
 // ---------- Supabase connection ----------
 // Paste your Project URL and anon public key from Supabase → Settings → API.
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_PUBLIC_KEY';
+const SUPABASE_URL = 'https://ajvdglrdujhjjitdaafl.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_UFSaPAzxNpR6SPt443wGog_-7BeD5UH';
 const SUPABASE_CONFIGURED = !SUPABASE_URL.startsWith('YOUR_') && !SUPABASE_ANON_KEY.startsWith('YOUR_');
 const sb = SUPABASE_CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
