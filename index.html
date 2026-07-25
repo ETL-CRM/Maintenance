@@ -306,6 +306,27 @@ const LEVEL_LABELS = {none:'No access', view:'View only', create:'Can add entrie
 // rights via the "Access" button on that user in Users & Access.
 const MASTER_DATA_MODULES = ['machines','sections','stock','roster'];
 
+// The Role dropdown shows real job titles (what people actually recognise),
+// but permissions are still governed by just 4 access tiers underneath. Each
+// title maps to one tier here — add new titles by adding one line below.
+const ROLE_TITLE_TIERS = [
+  ['Admin', 'Admin'],
+  ['Management', 'Manager'],
+  ['Manager', 'Manager'],
+  ['Sr. Executive', 'Manager'],
+  ['Executive', 'Technician'],
+  ['Fire Safety Officer', 'Technician'],
+  ['Electrician', 'Technician'],
+  ['Technician', 'Technician'],
+  ['Store Officer', 'Technician'],
+  ['Machine Operator', 'Operator'],
+  ['Operator', 'Operator'],
+  ['Other', 'Technician']
+];
+const ROLE_TITLE_OPTIONS = ROLE_TITLE_TIERS.map(([title])=>title);
+const ROLE_TIER_MAP = Object.fromEntries(ROLE_TITLE_TIERS);
+function roleTier(title){ return ROLE_TIER_MAP[title] || 'Technician'; }
+
 const PERMS = {
   Admin:      { users:'full', machines:'full', sections:'full', stock:'full', roster:'full', pm:'full', breakdown:'full', spareuse:'full', sparereq:'full', repair:'full', risk:'full' },
   Manager:    { users:'view', machines:'view', sections:'view', stock:'view', roster:'view', pm:'full', breakdown:'full', spareuse:'full', sparereq:'full', repair:'full', risk:'full' },
@@ -326,8 +347,8 @@ function permLevel(moduleKey, forUser){
   const full = STATE.data.users.find(x=>x.id===target.id) || target;
   const ov = full.permOverride && full.permOverride[moduleKey];
   if(ov && ov!=='default') return ov;
-  const role = full.role;
-  return (PERMS[role] && PERMS[role][moduleKey]) || 'none';
+  const tier = roleTier(full.role);
+  return (PERMS[tier] && PERMS[tier][moduleKey]) || 'none';
 }
 function canView(moduleKey){ return permLevel(moduleKey) !== 'none'; }
 function canCreate(moduleKey){ return atLeast(permLevel(moduleKey),'create'); }
@@ -375,7 +396,7 @@ function userName(id){
   return u ? u.name : '—';
 }
 function activeUsers(){ return STATE.data.users.filter(u=>u.active!=='No'); }
-function techAndUp(){ return STATE.data.users.filter(u=>['Admin','Manager','Technician'].includes(u.role) && u.active!=='No'); }
+function techAndUp(){ return STATE.data.users.filter(u=>['Admin','Manager','Technician'].includes(roleTier(u.role)) && u.active!=='No'); }
 // ===================== MODULE SCHEMAS =====================
 // Each module drives the generic list/filter/form engine below.
 
@@ -392,9 +413,9 @@ function sectionOptions(){
     .slice().sort((a,b)=>a.name.localeCompare(b.name))
     .map(s=>opt(s.name, s.name));
 }
-function userOptions(roles){
+function userOptions(tiers){
   return STATE.data.users
-    .filter(u=> (!roles || roles.includes(u.role)) && u.active!=='No')
+    .filter(u=> (!tiers || tiers.includes(roleTier(u.role))) && u.active!=='No')
     .slice().sort((a,b)=>a.name.localeCompare(b.name))
     .map(u=>opt(u.id, u.name + ' ('+u.role+')'));
 }
@@ -407,7 +428,12 @@ const BADGE_MAP = {
   'Running':'b-green','Completed':'b-green','Resolved':'b-green','Received':'b-green','Approved':'b-green','Closed':'b-green','Mitigated':'b-green','Low':'b-green',
   'Pending':'b-amber','Ordered':'b-amber','Pending Approval':'b-amber','In Progress':'b-amber','Medium':'b-amber','Idle':'b-gray',
   'Overdue':'b-red','Breakdown':'b-red','Open':'b-red','High':'b-red','Critical':'b-red','Cancelled':'b-gray','Skipped':'b-gray',
-  'Under Maintenance':'b-amber'
+  'Under Maintenance':'b-amber',
+  // Role titles, colored by their underlying permission tier
+  'Admin':'b-red',
+  'Management':'b-forest','Manager':'b-forest','Sr. Executive':'b-forest',
+  'Executive':'b-amber','Fire Safety Officer':'b-amber','Electrician':'b-amber','Technician':'b-amber','Store Officer':'b-amber',
+  'Machine Operator':'b-gray','Operator':'b-gray','Other':'b-gray'
 };
 function badgeHtml(val){
   const cls = BADGE_MAP[val] || 'b-gray';
@@ -443,8 +469,8 @@ const MODULES = {
       {name:'name', label:'Full Name', type:'text', required:true, list:true, filterText:true},
       {name:'title', label:'Designation / Job Title', type:'text', required:true, list:true},
       {name:'phone', label:'Phone / Contact', type:'text', list:true},
-      {name:'suggestedRole', label:'Suggested Permission Role', type:'select', options:staticOpts(['Admin','Manager','Technician','Operator']),
-        hint:'Used to prefill the role when you create a login for this person — you can still change it.'},
+      {name:'suggestedRole', label:'Suggested Role', type:'select', options:staticOpts(ROLE_TITLE_OPTIONS),
+        hint:'Used to prefill their Role when you create a login for this person — you can still change it.'},
       {name:'responsibility', label:'Responsibility', type:'textarea'}
     ]
   },
@@ -548,11 +574,8 @@ const MODULES = {
     singular:'User',
     fields:[
       {name:'name', label:'Full Name', type:'text', required:true, list:true, filterText:true},
-      {name:'designation', label:'Designation / Job Title', type:'select',
-        options:staticOpts(['Management','Sr. Executive','Executive','Fire Safety Officer','Electrician','Machine Operator','Technician','Store Officer','Other']),
-        list:true, hint:'Their actual job title — for display only, this does not affect access.'},
-      {name:'role', label:'Permission Role', type:'select', options:staticOpts(['Admin','Manager','Technician','Operator']), required:true, list:true, badge:true,
-        hint:'Controls what they can see and edit in the system (see the table below).'},
+      {name:'role', label:'Role', type:'select', options:staticOpts(ROLE_TITLE_OPTIONS), required:true, list:true, badge:true,
+        hint:'Their job title. This also sets their access level — see the Roles & Access table below for what each one can do.'},
       {name:'section', label:'Section', type:'text', list:true},
       {name:'phone', label:'Phone / Contact', type:'text'},
       {name:'username', label:'Username', type:'text', required:true, list:true, hint:'What they type to sign in. Must be unique.'},
@@ -651,13 +674,13 @@ const SEED_MACHINES = [
 // Starter values for the Maintenance Team Directory (editable module — this is
 // just the one-click import content, not the live data).
 const SEED_ROSTER = [
-  {name:'Md. Ahsanullah', title:'Sr. Executive, Maintenance', phone:'01401-199716', suggestedRole:'Manager',
+  {name:'Md. Ahsanullah', title:'Sr. Executive, Maintenance', phone:'01401-199716', suggestedRole:'Sr. Executive',
     responsibility:'All production machine maintenance, repair, servicing and regular routine work; fire detection and protection system.'},
-  {name:'Md. Abdur Rahim', title:'Executive, Maintenance', phone:'01517-010866', suggestedRole:'Technician',
+  {name:'Md. Abdur Rahim', title:'Executive, Maintenance', phone:'01517-010866', suggestedRole:'Executive',
     responsibility:'Diesel generator operation & preventive maintenance; air compressor operation & preventive maintenance; CC camera, exit/emergency, PA system.'},
-  {name:'Md. Montu Molla', title:'Electrician', phone:'01746-934610', suggestedRole:'Technician',
+  {name:'Md. Montu Molla', title:'Electrician', phone:'01746-934610', suggestedRole:'Electrician',
     responsibility:'Electric supply line (SLD), machine power, wiring, light/fan, AC, UPS, IPS, AVR; fire detection & protection; CC camera, exit/emergency light, PA system, fire extinguisher, fire hose line, water supply, air supply, plumbing.'},
-  {name:'Md. Ataur Rahman', title:'Fire Safety Officer', phone:'01935-454284', suggestedRole:'Technician',
+  {name:'Md. Ataur Rahman', title:'Fire Safety Officer', phone:'01935-454284', suggestedRole:'Fire Safety Officer',
     responsibility:'Fire safety across the facility.'}
 ];
 // ===================== GENERIC LIST + FILTER ENGINE =====================
@@ -967,18 +990,6 @@ async function submitAccessForm(e, userId){
 // ---------- Quick prefill from Team Roster reference ----------
 // Maps a free-text job title (from the Team Directory) to the closest fixed
 // option in the Add User "Designation" dropdown.
-function guessDesignation(title){
-  const t = (title||'').toLowerCase();
-  if(t.includes('fire safety')) return 'Fire Safety Officer';
-  if(t.includes('electrician')) return 'Electrician';
-  if(t.includes('sr. executive') || t.includes('senior executive')) return 'Sr. Executive';
-  if(t.includes('executive')) return 'Executive';
-  if(t.includes('management') || t.includes('manager')) return 'Management';
-  if(t.includes('operator')) return 'Machine Operator';
-  if(t.includes('technician')) return 'Technician';
-  if(t.includes('store')) return 'Store Officer';
-  return 'Other';
-}
 function prefillUserFromRoster(rosterId){
   const person = STATE.data.roster.find(p=>p.id===rosterId);
   if(!person) return;
@@ -987,7 +998,6 @@ function prefillUserFromRoster(rosterId){
     const f = document.getElementById('entityForm');
     if(!f) return;
     f.querySelector('[name=name]').value = person.name;
-    f.querySelector('[name=designation]').value = guessDesignation(person.title);
     f.querySelector('[name=role]').value = person.suggestedRole || '';
     f.querySelector('[name=section]').value = 'Maintenance';
     f.querySelector('[name=phone]').value = person.phone || '';
@@ -1268,12 +1278,14 @@ function renderUsersTab(){
     html += `</div>`;
   }
 
-  html += `<div class="panel"><h3>Roles & Access Overview <span class="cnt">(role defaults — use the "Access" button on a user to override)</span></h3>
+  html += `<div class="panel"><h3>Roles & Access Overview <span class="cnt">(access is grouped into 4 tiers — use the "Access" button on a user to override any individual person)</span></h3>
     <div class="table-wrap" style="box-shadow:none;">
-    <table class="perm-table"><thead><tr><th>Role</th>${PERM_MODULE_KEYS.map(k=>`<th>${MODULES[k].icon}<br>${esc(MODULES[k].label.split(' ')[0])}</th>`).join('')}</tr></thead><tbody>`;
-  Object.keys(PERMS).forEach(role=>{
-    const p = PERMS[role];
-    html += `<tr><td><b>${role}</b><div class="muted">${esc(ROLE_DESC[role])}</div></td>`;
+    <table class="perm-table"><thead><tr><th>Access Tier</th>${PERM_MODULE_KEYS.map(k=>`<th>${MODULES[k].icon}<br>${esc(MODULES[k].label.split(' ')[0])}</th>`).join('')}</tr></thead><tbody>`;
+  Object.keys(PERMS).forEach(tier=>{
+    const p = PERMS[tier];
+    const titlesInTier = ROLE_TITLE_OPTIONS.filter(t=>roleTier(t)===tier);
+    html += `<tr><td><b>${tier}</b><div class="muted">${esc(ROLE_DESC[tier])}</div>
+      <div class="muted" style="margin-top:4px;"><i>Roles: ${titlesInTier.map(esc).join(', ')}</i></div></td>`;
     PERM_MODULE_KEYS.forEach(k=>{
       html += `<td>${levelBadge(p[k]||'none')}</td>`;
     });
