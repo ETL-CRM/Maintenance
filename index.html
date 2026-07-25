@@ -1161,6 +1161,11 @@ function panelList(title, items, lineFn, rightFn){
 function renderSearchTab(){
   const sf = STATE.searchFilters;
   const searchable = Object.keys(MODULES).filter(mk=>mk!=='users' && canView(mk));
+  // "All modules" only sweeps actual day-to-day records (things with a real date).
+  // Master data (Machines, Sections, Spare Parts Catalog, Team Directory) doesn't
+  // have a meaningful date, so it would otherwise flood the top of every search
+  // with today's date. It's still searchable — just pick it from the Module list.
+  const searchableDefault = searchable.filter(mk=>!!MODULES[mk].dateField);
 
   let html = `<div class="page-head"><div><h2>🔍 Search & Reports</h2>
     <div class="page-sub">Find any record across every maintenance module — by date, section, machine, or user.</div></div></div>
@@ -1185,7 +1190,7 @@ function renderSearchTab(){
     <button class="btn btn-ghost btn-sm" onclick="clearSearch()">Clear</button>
   </div>`;
 
-  const modulesToSearch = sf.module==='all' ? searchable : [sf.module];
+  const modulesToSearch = sf.module==='all' ? searchableDefault : [sf.module];
   let results = [];
   modulesToSearch.forEach(mk=>{
     const mod = MODULES[mk];
