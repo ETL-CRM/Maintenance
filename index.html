@@ -536,7 +536,11 @@ const MODULES = {
     singular:'User',
     fields:[
       {name:'name', label:'Full Name', type:'text', required:true, list:true, filterText:true},
-      {name:'role', label:'Role', type:'select', options:staticOpts(['Admin','Manager','Technician','Operator']), required:true, list:true, badge:true},
+      {name:'designation', label:'Designation / Job Title', type:'select',
+        options:staticOpts(['Management','Sr. Executive','Executive','Fire Safety Officer','Electrician','Machine Operator','Technician','Store Officer','Other']),
+        list:true, hint:'Their actual job title — for display only, this does not affect access.'},
+      {name:'role', label:'Permission Role', type:'select', options:staticOpts(['Admin','Manager','Technician','Operator']), required:true, list:true, badge:true,
+        hint:'Controls what they can see and edit in the system (see the table below).'},
       {name:'section', label:'Section', type:'text', list:true},
       {name:'phone', label:'Phone / Contact', type:'text'},
       {name:'username', label:'Username', type:'text', required:true, list:true, hint:'What they type to sign in. Must be unique.'},
@@ -633,13 +637,13 @@ const SEED_MACHINES = [
 ];
 // Reference directory only (not login accounts) — Admin can use "Prefill" to quickly create a login for any of them.
 const TEAM_ROSTER = [
-  {name:'Md. Ahsanullah', title:'Sr. Executive, Maintenance', phone:'01401-199716', suggestedRole:'Manager',
+  {name:'Md. Ahsanullah', title:'Sr. Executive, Maintenance', phone:'01401-199716', suggestedRole:'Manager', suggestedDesignation:'Sr. Executive',
     responsibility:'All production machine maintenance, repair, servicing and regular routine work; fire detection and protection system.'},
-  {name:'Md. Abdur Rahim', title:'Executive, Maintenance', phone:'01517-010866', suggestedRole:'Technician',
+  {name:'Md. Abdur Rahim', title:'Executive, Maintenance', phone:'01517-010866', suggestedRole:'Technician', suggestedDesignation:'Executive',
     responsibility:'Diesel generator operation & preventive maintenance; air compressor operation & preventive maintenance; CC camera, exit/emergency, PA system.'},
-  {name:'Md. Montu Molla', title:'Electrician', phone:'01746-934610', suggestedRole:'Technician',
+  {name:'Md. Montu Molla', title:'Electrician', phone:'01746-934610', suggestedRole:'Technician', suggestedDesignation:'Electrician',
     responsibility:'Electric supply line (SLD), machine power, wiring, light/fan, AC, UPS, IPS, AVR; fire detection & protection; CC camera, exit/emergency light, PA system, fire extinguisher, fire hose line, water supply, air supply, plumbing.'},
-  {name:'Md. Ataur Rahman', title:'Fire Safety Officer', phone:'01935-454284', suggestedRole:'Technician',
+  {name:'Md. Ataur Rahman', title:'Fire Safety Officer', phone:'01935-454284', suggestedRole:'Technician', suggestedDesignation:'Fire Safety Officer',
     responsibility:'Fire safety across the facility.'}
 ];
 // ===================== GENERIC LIST + FILTER ENGINE =====================
@@ -950,6 +954,7 @@ function prefillUserFromRoster(idx){
     const f = document.getElementById('entityForm');
     if(!f) return;
     f.querySelector('[name=name]').value = person.name;
+    f.querySelector('[name=designation]').value = person.suggestedDesignation || '';
     f.querySelector('[name=role]').value = person.suggestedRole;
     f.querySelector('[name=section]').value = 'Maintenance';
     f.querySelector('[name=phone]').value = person.phone;
