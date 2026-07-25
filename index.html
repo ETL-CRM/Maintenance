@@ -250,7 +250,7 @@ const sb = SUPABASE_CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPA
 
 // ---------- Storage helpers ----------
 const DKEYS = {
-  users:'data_users', machines:'data_machines', sections:'data_sections', pm:'data_pm', breakdown:'data_breakdown',
+  users:'data_users', machines:'data_machines', sections:'data_sections', roster:'data_roster', pm:'data_pm', breakdown:'data_breakdown',
   stock:'data_stock', spareuse:'data_spareuse', sparereq:'data_sparereq',
   repair:'data_repair', risk:'data_risk'
 };
@@ -298,19 +298,19 @@ function toast(msg){
 const LEVEL_RANK = {none:0, view:1, create:2, edit:3, full:4};
 function atLeast(level, min){ return (LEVEL_RANK[level]||0) >= LEVEL_RANK[min]; }
 
-const PERM_MODULE_KEYS = ['machines','sections','stock','pm','breakdown','spareuse','sparereq','repair','risk','users'];
+const PERM_MODULE_KEYS = ['machines','sections','stock','roster','pm','breakdown','spareuse','sparereq','repair','risk','users'];
 const LEVEL_LABELS = {none:'No access', view:'View only', create:'Can add entries', edit:'Can edit all', full:'Full control (incl. delete)'};
 
 // Modules marked as MASTER DATA are locked to Admin-only editing by default
 // (everyone else can view). Admin can still grant a specific person edit
 // rights via the "Access" button on that user in Users & Access.
-const MASTER_DATA_MODULES = ['machines','sections','stock'];
+const MASTER_DATA_MODULES = ['machines','sections','stock','roster'];
 
 const PERMS = {
-  Admin:      { users:'full', machines:'full', sections:'full', stock:'full', pm:'full', breakdown:'full', spareuse:'full', sparereq:'full', repair:'full', risk:'full' },
-  Manager:    { users:'view', machines:'view', sections:'view', stock:'view', pm:'full', breakdown:'full', spareuse:'full', sparereq:'full', repair:'full', risk:'full' },
-  Technician: { users:'none', machines:'view', sections:'view', stock:'view', pm:'edit', breakdown:'edit', spareuse:'edit', sparereq:'edit', repair:'create', risk:'create' },
-  Operator:   { users:'none', machines:'view', sections:'view', stock:'none', pm:'view', breakdown:'create', spareuse:'none', sparereq:'none', repair:'none', risk:'none' }
+  Admin:      { users:'full', machines:'full', sections:'full', stock:'full', roster:'full', pm:'full', breakdown:'full', spareuse:'full', sparereq:'full', repair:'full', risk:'full' },
+  Manager:    { users:'view', machines:'view', sections:'view', stock:'view', roster:'view', pm:'full', breakdown:'full', spareuse:'full', sparereq:'full', repair:'full', risk:'full' },
+  Technician: { users:'none', machines:'view', sections:'view', stock:'view', roster:'view', pm:'edit', breakdown:'edit', spareuse:'edit', sparereq:'edit', repair:'create', risk:'create' },
+  Operator:   { users:'none', machines:'view', sections:'view', stock:'none', roster:'view', pm:'view', breakdown:'create', spareuse:'none', sparereq:'none', repair:'none', risk:'none' }
 };
 const ROLE_DESC = {
   Admin:'Full control: manages master data (machines, sections, spare parts catalog), manages users, and all daily records.',
@@ -350,7 +350,7 @@ function canDeleteRecord(moduleKey, rec){
 const STATE = {
   user:null,           // {id,name,role,section}
   tab:'dashboard',
-  data:{ users:[], machines:[], sections:[], pm:[], breakdown:[], stock:[], spareuse:[], sparereq:[], repair:[], risk:[] },
+  data:{ users:[], machines:[], sections:[], roster:[], pm:[], breakdown:[], stock:[], spareuse:[], sparereq:[], repair:[], risk:[] },
   filters:{},           // per-module filter state, keyed by moduleKey
   searchFilters:{module:'all', from:'', to:'', machine:'', section:'', q:''},
   modalStack:null
@@ -434,6 +434,18 @@ const MODULES = {
     fields:[
       {name:'name', label:'Section Name', type:'text', required:true, list:true, filterText:true},
       {name:'notes', label:'Notes', type:'textarea'}
+    ]
+  },
+  roster:{
+    key:'roster', label:'Maintenance Team Directory', icon:'📇', storageKey:'roster',
+    singular:'Team Member', masterData:true,
+    fields:[
+      {name:'name', label:'Full Name', type:'text', required:true, list:true, filterText:true},
+      {name:'title', label:'Designation / Job Title', type:'text', required:true, list:true},
+      {name:'phone', label:'Phone / Contact', type:'text', list:true},
+      {name:'suggestedRole', label:'Suggested Permission Role', type:'select', options:staticOpts(['Admin','Manager','Technician','Operator']),
+        hint:'Used to prefill the role when you create a login for this person — you can still change it.'},
+      {name:'responsibility', label:'Responsibility', type:'textarea'}
     ]
   },
   pm:{
@@ -636,14 +648,16 @@ const SEED_MACHINES = [
   {name:'PA (Public Address) System', code:'', category:'Utility', section:'Fire & Safety'}
 ];
 // Reference directory only (not login accounts) — Admin can use "Prefill" to quickly create a login for any of them.
-const TEAM_ROSTER = [
-  {name:'Md. Ahsanullah', title:'Sr. Executive, Maintenance', phone:'01401-199716', suggestedRole:'Manager', suggestedDesignation:'Sr. Executive',
+// Starter values for the Maintenance Team Directory (editable module — this is
+// just the one-click import content, not the live data).
+const SEED_ROSTER = [
+  {name:'Md. Ahsanullah', title:'Sr. Executive, Maintenance', phone:'01401-199716', suggestedRole:'Manager',
     responsibility:'All production machine maintenance, repair, servicing and regular routine work; fire detection and protection system.'},
-  {name:'Md. Abdur Rahim', title:'Executive, Maintenance', phone:'01517-010866', suggestedRole:'Technician', suggestedDesignation:'Executive',
+  {name:'Md. Abdur Rahim', title:'Executive, Maintenance', phone:'01517-010866', suggestedRole:'Technician',
     responsibility:'Diesel generator operation & preventive maintenance; air compressor operation & preventive maintenance; CC camera, exit/emergency, PA system.'},
-  {name:'Md. Montu Molla', title:'Electrician', phone:'01746-934610', suggestedRole:'Technician', suggestedDesignation:'Electrician',
+  {name:'Md. Montu Molla', title:'Electrician', phone:'01746-934610', suggestedRole:'Technician',
     responsibility:'Electric supply line (SLD), machine power, wiring, light/fan, AC, UPS, IPS, AVR; fire detection & protection; CC camera, exit/emergency light, PA system, fire extinguisher, fire hose line, water supply, air supply, plumbing.'},
-  {name:'Md. Ataur Rahman', title:'Fire Safety Officer', phone:'01935-454284', suggestedRole:'Technician', suggestedDesignation:'Fire Safety Officer',
+  {name:'Md. Ataur Rahman', title:'Fire Safety Officer', phone:'01935-454284', suggestedRole:'Technician',
     responsibility:'Fire safety across the facility.'}
 ];
 // ===================== GENERIC LIST + FILTER ENGINE =====================
@@ -751,6 +765,11 @@ function renderModuleTab(moduleKey){
     html += `<div class="panel" style="border-color:var(--rust);"><h3>Load your starter machine list?</h3>
       <div class="muted" style="margin-bottom:10px;">We found ${SEED_MACHINES.length} machines & utilities in your uploaded maintenance files (Offset, PFL, Die Cutting, Finishing, Woven, Thermal, ETP, and more). Add them now and edit freely afterwards.</div>
       <button class="btn btn-primary btn-sm" onclick="importSeedMachines()">Load Starter Machine List</button></div>`;
+  }
+  if(moduleKey==='roster' && canCreate('roster') && all.length===0){
+    html += `<div class="panel" style="border-color:var(--rust);"><h3>Load your known team members?</h3>
+      <div class="muted" style="margin-bottom:10px;">We found ${SEED_ROSTER.length} maintenance team members in your uploaded files. Add them now — you can edit, remove, or add more people at any time.</div>
+      <button class="btn btn-primary btn-sm" onclick="importSeedRoster()">Load Starter Team List</button></div>`;
   }
 
   html += renderFilterBar(moduleKey);
@@ -946,18 +965,32 @@ async function submitAccessForm(e, userId){
 }
 
 // ---------- Quick prefill from Team Roster reference ----------
-function prefillUserFromRoster(idx){
-  const person = TEAM_ROSTER[idx];
+// Maps a free-text job title (from the Team Directory) to the closest fixed
+// option in the Add User "Designation" dropdown.
+function guessDesignation(title){
+  const t = (title||'').toLowerCase();
+  if(t.includes('fire safety')) return 'Fire Safety Officer';
+  if(t.includes('electrician')) return 'Electrician';
+  if(t.includes('sr. executive') || t.includes('senior executive')) return 'Sr. Executive';
+  if(t.includes('executive')) return 'Executive';
+  if(t.includes('management') || t.includes('manager')) return 'Management';
+  if(t.includes('operator')) return 'Machine Operator';
+  if(t.includes('technician')) return 'Technician';
+  if(t.includes('store')) return 'Store Officer';
+  return 'Other';
+}
+function prefillUserFromRoster(rosterId){
+  const person = STATE.data.roster.find(p=>p.id===rosterId);
   if(!person) return;
   openForm('users', null);
   setTimeout(()=>{
     const f = document.getElementById('entityForm');
     if(!f) return;
     f.querySelector('[name=name]').value = person.name;
-    f.querySelector('[name=designation]').value = person.suggestedDesignation || '';
-    f.querySelector('[name=role]').value = person.suggestedRole;
+    f.querySelector('[name=designation]').value = guessDesignation(person.title);
+    f.querySelector('[name=role]').value = person.suggestedRole || '';
     f.querySelector('[name=section]').value = 'Maintenance';
-    f.querySelector('[name=phone]').value = person.phone;
+    f.querySelector('[name=phone]').value = person.phone || '';
     const uname = person.name.toLowerCase().replace(/^md\.?\s*/,'').replace(/[^a-z]+/g,'.').replace(/^\.|\.$/g,'');
     f.querySelector('[name=username]').value = uname;
   }, 30);
@@ -974,6 +1007,20 @@ async function importSeedMachines(){
   STATE.data.machines = STATE.data.machines.concat(toAdd);
   await saveArr(DKEYS.machines, STATE.data.machines);
   toast(toAdd.length+' machines added.');
+  renderMain();
+}
+
+// ---------- One-click starter team directory import ----------
+async function importSeedRoster(){
+  if(!confirm('Add '+SEED_ROSTER.length+' known maintenance team members to the Team Directory? You can edit or delete any of them afterwards.')) return;
+  const existing = new Set(STATE.data.roster.map(p=>p.name.toLowerCase()));
+  const toAdd = SEED_ROSTER.filter(p=>!existing.has(p.name.toLowerCase())).map(p=>({
+    id: uid('roster'), ...p,
+    createdBy: STATE.user.id, createdByName: STATE.user.name, createdAt: new Date().toISOString()
+  }));
+  STATE.data.roster = STATE.data.roster.concat(toAdd);
+  await saveArr(DKEYS.roster, STATE.data.roster);
+  toast(toAdd.length+' team member(s) added.');
   renderMain();
 }
 // ===================== DASHBOARD =====================
@@ -1200,17 +1247,17 @@ function renderUsersTab(){
   }
   let html = renderModuleTab('users');
 
-  // Team roster reference (from uploaded maintenance team file) — quick-create logins
+  // Team Directory cross-reference — anyone in the (now editable) Team
+  // Directory who doesn't have a login yet, with a one-click "Create Login".
   const existingNames = new Set(STATE.data.users.map(u=>u.name.toLowerCase()));
-  const notYetAdded = TEAM_ROSTER.filter(p=>!existingNames.has(p.name.toLowerCase()));
+  const notYetAdded = STATE.data.roster.filter(p=>!existingNames.has(p.name.toLowerCase()));
   if(notYetAdded.length>0 && canCreate('users')){
-    html += `<div class="panel"><h3>Maintenance Team Directory <span class="cnt">(from your uploaded files — reference only)</span></h3>`;
+    html += `<div class="panel"><h3>Maintenance Team Directory <span class="cnt">(people without a login yet — manage the full list under Master Data → Maintenance Team Directory)</span></h3>`;
     notYetAdded.forEach((p)=>{
-      const idx = TEAM_ROSTER.indexOf(p);
       html += `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);">
-        <div><b>${esc(p.name)}</b> — ${esc(p.title)} <span class="muted">(${esc(p.phone)})</span>
-          <div class="muted" style="margin-top:3px;max-width:640px;">${esc(p.responsibility)}</div></div>
-        <button class="btn btn-sm btn-ghost" style="white-space:nowrap;" onclick="prefillUserFromRoster(${idx})">+ Create Login</button>
+        <div><b>${esc(p.name)}</b> — ${esc(p.title)} <span class="muted">(${esc(p.phone||'—')})</span>
+          <div class="muted" style="margin-top:3px;max-width:640px;">${esc(p.responsibility||'')}</div></div>
+        <button class="btn btn-sm btn-ghost" style="white-space:nowrap;" onclick="prefillUserFromRoster('${p.id}')">+ Create Login</button>
       </div>`;
     });
     html += `</div>`;
@@ -1390,7 +1437,8 @@ const TAB_GROUPS = [
   { label:'Master Data', hint:'Admin managed', tabs:[
     {key:'machines', label:'Machines & Utilities', icon:'⚙️'},
     {key:'sections', label:'Sections & Departments', icon:'🏷️'},
-    {key:'stock', label:'Spare Parts Catalog', icon:'📦'}
+    {key:'stock', label:'Spare Parts Catalog', icon:'📦'},
+    {key:'roster', label:'Maintenance Team Directory', icon:'📇'}
   ]},
   { label:'Daily Records', tabs:[
     {key:'pm', label:'Preventive Maintenance', icon:'🗓️'},
