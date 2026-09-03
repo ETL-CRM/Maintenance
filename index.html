@@ -280,7 +280,24 @@ async function setPersonal(key, val){
 }
 
 function uid(prefix){ return prefix+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+// Formats a Date object as YYYY-MM-DD using its LOCAL calendar date — never
+// use .toISOString() for this, since that converts to UTC first and shifts
+// the date backward by a day for any timezone ahead of UTC (e.g. Bangladesh,
+// UTC+6), which is the bug that showed the dashboard's month range as
+// Aug 31 – Sep 29 instead of Sep 1 – Sep 30.
+function toLocalISODate(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
+function todayStr(){ return toLocalISODate(new Date()); }
+// Converts a full createdAt/updatedAt timestamp (stored in UTC) into the
+// LOCAL calendar date it falls on, for display purposes only.
+function localDateFromTimestamp(iso){
+  if(!iso) return '';
+  try{ return toLocalISODate(new Date(iso)); }catch(e){ return (iso||'').slice(0,10); }
+}
 function fmtDate(d){ if(!d) return '—'; try{ const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return d;} }
 // Formats a total of minutes as e.g. "6h 30m" (or "45 min" under an hour) — used
 // for dashboard totals; individual record entries are always stored in minutes.
@@ -848,7 +865,7 @@ function renderModuleTab(moduleKey){
         else html += `<td>${esc(val!==undefined && val!=='' ? val : '—')}</td>`;
       });
       html += `<td class="muted">${esc(r.createdByName||'—')}</td>`;
-      html += `<td class="muted">${fmtDate((r.createdAt||'').slice(0,10))}</td>`;
+      html += `<td class="muted">${fmtDate(localDateFromTimestamp(r.createdAt))}</td>`;
       html += '<td><div class="row-actions">';
       if(canEditRecord(moduleKey, r)) html += `<button class="btn btn-sm btn-ghost" onclick="openForm('${moduleKey}','${r.id}')">Edit</button>`;
       if(moduleKey==='users' && hasFullControl('users')) html += `<button class="btn btn-sm btn-ghost" onclick="openAccessEditor('${r.id}')">Access</button>`;
@@ -1176,8 +1193,8 @@ async function importSeedRoster(){
   renderMain();
 }
 // ===================== DASHBOARD =====================
-function firstDayOfMonth(){ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0,10); }
-function lastDayOfMonth(){ const d=new Date(); return new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().slice(0,10); }
+function firstDayOfMonth(){ const d=new Date(); return toLocalISODate(new Date(d.getFullYear(), d.getMonth(), 1)); }
+function lastDayOfMonth(){ const d=new Date(); return toLocalISODate(new Date(d.getFullYear(), d.getMonth()+1, 0)); }
 
 function renderDashboard(){
   if(STATE.dashFrom===undefined) STATE.dashFrom = firstDayOfMonth();
@@ -1375,7 +1392,7 @@ function renderSearchTab(){
     html += `<tr class="empty-row"><td colspan="7">No records match these filters.</td></tr>`;
   } else {
     results.slice(0,300).forEach(({mk,mod,r})=>{
-      const dateVal = mod.dateField ? r[mod.dateField] : (r.createdAt||'').slice(0,10);
+      const dateVal = mod.dateField ? r[mod.dateField] : localDateFromTimestamp(r.createdAt);
       const summaryField = mod.fields.find(f=>f.filterText) || mod.fields.find(f=>f.type==='textarea') || mod.fields[0];
       const statusField = mod.fields.find(f=>f.name==='status');
       html += `<tr>
