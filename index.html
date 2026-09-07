@@ -438,6 +438,21 @@ function machineSection(id){
   const m = STATE.data.machines.find(x=>x.id===id);
   return m ? m.section : '';
 }
+// Total quantity consumed against a Catalog part, summed from every Spare
+// Parts — Usage entry that used it (matched by exact part name).
+function partConsumedQty(partName){
+  return STATE.data.spareuse
+    .filter(u=>u.partName===partName)
+    .reduce((s,u)=>s+(Number(u.qtyUsed)||0), 0);
+}
+// A record's section: an explicit .section field (e.g. Spare Parts Requests,
+// for parts not tied to one machine) always wins; otherwise it's derived
+// from whichever machine the record points to.
+function recordSection(mod, r){
+  if(r.section) return r.section;
+  if(mod.machineField) return machineSection(r[mod.machineField]);
+  return '';
+}
 function userName(id){
   const u = STATE.data.users.find(x=>x.id===id);
   return u ? u.name : '—';
@@ -582,7 +597,10 @@ const MODULES = {
       {name:'partName', label:'Part Name', type:'text', required:true, list:true, filterText:true},
       {name:'unit', label:'Unit', type:'select', options:staticOpts(['pcs','set','meter','liter','kg','box']), list:true, default:'pcs'},
       {name:'qtyNeeded', label:'Qty Needed', type:'number', required:true, list:true},
-      {name:'machineId', label:'For Machine / Utility', type:'select', options:()=>machineOptions(), list:true},
+      {name:'section', label:'Section / Department', type:'select', options:()=>sectionOptions(), required:true, list:true,
+        hint:'Which department this part is for — always fill this in, even for shared/consumable parts (grease, bolts, belts) that aren\'t tied to one machine.'},
+      {name:'machineId', label:'For Machine / Utility (optional)', type:'select', options:()=>machineOptions(), list:true,
+        hint:'Only if this is for one specific machine. Leave blank for parts used across several machines in the section above.'},
       {name:'dateRequested', label:'Date Requested', type:'date', required:true, list:true, default:()=>todayStr()},
       {name:'neededBy', label:'Needed By', type:'date'},
       {name:'status', label:'Status', type:'select', options:staticOpts(['Pending','Ordered','Received','Cancelled']), required:true, list:true, badge:true, default:'Pending'},
@@ -752,7 +770,7 @@ function applyFilters(moduleKey, records){
   const mod = MODULES[moduleKey];
   return records.filter(r=>{
     if(f.machine && mod.machineField && r[mod.machineField]!==f.machine) return false;
-    if(f.section && mod.machineField && machineSection(r[mod.machineField])!==f.section) return false;
+    if(f.section && recordSection(mod, r)!==f.section) return false;
     if(f.by && r.createdBy!==f.by) return false;
     if(f.status && r.status!==f.status) return false;
     if(mod.dateField){
@@ -833,6 +851,12 @@ function renderModuleTab(moduleKey){
     </div>`;
   }
 
+  if(moduleKey==='stock' && all.length>0){
+    html += `<div class="panel" style="padding:10px 16px; margin-bottom:14px;">
+      <span class="muted"><b>Qty in Stock</b> = total ever received. <b>Consumed</b> = total used so far (from Spare Parts — Usage). <b>Remaining</b> = Qty in Stock − Consumed — shown in red once it drops to or below the Minimum Level you've set.</span>
+    </div>`;
+  }
+
   if(moduleKey==='machines' && canCreate('machines') && all.length===0){
     html += `<div class="panel" style="border-color:var(--rust);"><h3>Load your starter machine list?</h3>
       <div class="muted" style="margin-bottom:10px;">We found ${SEED_MACHINES.length} machines & utilities in your uploaded maintenance files (Offset, PFL, Die Cutting, Finishing, Woven, Thermal, ETP, and more). Add them now and edit freely afterwards.</div>
@@ -844,14 +868,18 @@ function renderModuleTab(moduleKey){
       <button class="btn btn-primary btn-sm" onclick="importSeedRoster()">Load Starter Team List</button></div>`;
   }
 
+  const showStockColumns = moduleKey==='stock';
+  const extraCols = showStockColumns ? 2 : 0;
+
   html += renderFilterBar(moduleKey);
 
   html += '<div class="table-wrap"><table><thead><tr>';
   listFields.forEach(f=> html += `<th>${esc(f.label)}</th>`);
+  if(showStockColumns) html += `<th>Consumed</th><th>Remaining</th>`;
   html += `<th>Entered By</th><th>Date Added</th><th></th></tr></thead><tbody>`;
 
   if(rows.length===0){
-    html += `<tr class="empty-row"><td colspan="${listFields.length+3}">No records match your filters yet.${canCreate(moduleKey)?' Click “Add” to create the first entry.':''}</td></tr>`;
+    html += `<tr class="empty-row"><td colspan="${listFields.length+3+extraCols}">No records match your filters yet.${canCreate(moduleKey)?' Click “Add” to create the first entry.':''}</td></tr>`;
   } else {
     rows.forEach(r=>{
       html += '<tr>';
@@ -864,6 +892,13 @@ function renderModuleTab(moduleKey){
         else if(f.type==='textarea') html += `<td class="cell-wrap">${esc(val||'—')}</td>`;
         else html += `<td>${esc(val!==undefined && val!=='' ? val : '—')}</td>`;
       });
+      if(showStockColumns){
+        const consumed = partConsumedQty(r.partName);
+        const received = Number(r.qtyInStock)||0;
+        const remaining = received - consumed;
+        const low = r.minLevel!=='' && r.minLevel!==undefined && remaining<=Number(r.minLevel);
+        html += `<td>${consumed}</td><td>${low?`<span class="badge b-red">${remaining}</span>`:remaining}</td>`;
+      }
       html += `<td class="muted">${esc(r.createdByName||'—')}</td>`;
       html += `<td class="muted">${fmtDate(localDateFromTimestamp(r.createdAt))}</td>`;
       html += '<td><div class="row-actions">';
@@ -1207,12 +1242,10 @@ function renderDashboard(){
     if(!d) return false;
     if(from && d < from) return false;
     if(to && d > to) return false;
-    if(sec && MODULES[mk].machineField){
-      if(machineSection(r[MODULES[mk].machineField]) !== sec) return false;
-    }
+    if(sec && recordSection(MODULES[mk], r) !== sec) return false;
     return true;
   });
-  const bySection = (list, machineField) => sec ? list.filter(r=> machineSection(r[machineField])===sec) : list;
+  const bySection = (list, moduleKey) => sec ? list.filter(r=> recordSection(MODULES[moduleKey], r)===sec) : list;
 
   let html = `<div class="page-head"><div><h2>📊 Dashboard</h2>
       <div class="page-sub">Maintenance overview — Enam Trims Ltd</div></div></div>
@@ -1250,7 +1283,7 @@ function renderDashboard(){
     if(canView('spareuse') || canView('sparereq')){
       const useM = canView('spareuse') ? inRange('spareuse','date') : [];
       const spareCost = useM.reduce((s,r)=>s+(Number(r.cost)||0),0);
-      const pendingReq = canView('sparereq') ? bySection(STATE.data.sparereq.filter(r=>r.status==='Pending'), 'machineId').length : 0;
+      const pendingReq = canView('sparereq') ? bySection(STATE.data.sparereq.filter(r=>r.status==='Pending'), 'sparereq').length : 0;
       html += statCard('Spare Parts Cost', 'BDT '+spareCost.toLocaleString(), useM.length+' consumption entries');
       html += statCard('Pending Spare Requests', pendingReq, 'awaiting procurement', pendingReq>0);
     }
@@ -1260,7 +1293,7 @@ function renderDashboard(){
       html += statCard('Repair & Servicing Cost', 'BDT '+repCost.toLocaleString(), repM.length+' job(s) in range');
     }
     if(canView('risk')){
-      const riskOpen = bySection(STATE.data.risk.filter(r=>r.status==='Open' && (r.severity==='High'||r.severity==='Critical')), 'machineId').length;
+      const riskOpen = bySection(STATE.data.risk.filter(r=>r.status==='Open' && (r.severity==='High'||r.severity==='Critical')), 'risk').length;
       html += statCard('Critical / High Risks Open', riskOpen, 'affecting production', riskOpen>0);
     }
     html += '</div>';
@@ -1285,13 +1318,13 @@ function renderDashboard(){
 
   // Open breakdowns list
   if(canView('breakdown')){
-    const openList = bySection(STATE.data.breakdown.filter(r=>r.status!=='Resolved'), 'machineId').sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,6);
+    const openList = bySection(STATE.data.breakdown.filter(r=>r.status!=='Resolved'), 'breakdown').sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,6);
     html += panelList('Active Breakdowns', openList, r=>`<b>${esc(machineName(r.machineId))}</b> — ${esc(r.reason).slice(0,80)} ${badgeHtml(r.status)}`, r=>fmtDate(r.date));
   }
 
   // Critical risks
   if(canView('risk')){
-    const riskList = bySection(STATE.data.risk.filter(r=>r.status==='Open'), 'machineId').sort((a,b)=>{
+    const riskList = bySection(STATE.data.risk.filter(r=>r.status==='Open'), 'risk').sort((a,b)=>{
       const order={Critical:0,High:1,Medium:2,Low:3};
       return (order[a.severity]??9)-(order[b.severity]??9);
     }).slice(0,6);
@@ -1300,8 +1333,8 @@ function renderDashboard(){
 
   // Pending spare requests
   if(canView('sparereq')){
-    const reqList = bySection(STATE.data.sparereq.filter(r=>r.status==='Pending'), 'machineId').sort((a,b)=>(a.neededBy||'9999').localeCompare(b.neededBy||'9999')).slice(0,6);
-    html += panelList('Pending Spare Part Requests', reqList, r=>`<b>${esc(r.partName)}</b> × ${esc(r.qtyNeeded)} ${r.machineId?('for '+esc(machineName(r.machineId))):''}`, r=>r.neededBy? ('needed by '+fmtDate(r.neededBy)) : '—');
+    const reqList = bySection(STATE.data.sparereq.filter(r=>r.status==='Pending'), 'sparereq').sort((a,b)=>(a.neededBy||'9999').localeCompare(b.neededBy||'9999')).slice(0,6);
+    html += panelList('Pending Spare Part Requests', reqList, r=>`<b>${esc(r.partName)}</b> × ${esc(r.qtyNeeded)} — ${esc(r.section||'—')}${r.machineId?(' · '+esc(machineName(r.machineId))):''}`, r=>r.neededBy? ('needed by '+fmtDate(r.neededBy)) : '—');
   }
 
   if(!canView('pm') && !canView('breakdown')){
@@ -1366,7 +1399,7 @@ function renderSearchTab(){
     let recs = STATE.data[mod.storageKey];
     recs = recs.filter(r=>{
       if(sf.machine && mod.machineField && r[mod.machineField]!==sf.machine) return false;
-      if(sf.section && mod.machineField && machineSection(r[mod.machineField])!==sf.section) return false;
+      if(sf.section && recordSection(mod, r)!==sf.section) return false;
       if(mod.dateField){
         const d = r[mod.dateField];
         if(sf.from && (!d || d<sf.from)) return false;
@@ -1398,7 +1431,7 @@ function renderSearchTab(){
       html += `<tr>
         <td>${mod.icon} ${esc(mod.label)}</td>
         <td>${fmtDate(dateVal)}</td>
-        <td class="muted">${mod.machineField ? esc(machineSection(r[mod.machineField])||'—') : '—'}</td>
+        <td class="muted">${esc(recordSection(mod, r)||'—')}</td>
         <td>${mod.machineField ? esc(machineName(r[mod.machineField])) : '—'}</td>
         <td class="cell-wrap">${esc(String(r[summaryField.name]||'—')).slice(0,90)}</td>
         <td>${statusField && r.status ? badgeHtml(r.status) : '—'}</td>
@@ -1492,12 +1525,16 @@ function renderHelpTab(){
   html += `<div class="panel"><h3>4. Example: Requesting a spare part</h3>
     <p class="muted" style="font-size:13px; line-height:1.6;">
     A Technician notices low stock on a part needed for <b>Auto Die Cutting (02)</b>. They go to
-    <b>Spare Parts — Requests → + Add</b>, name the part, quantity needed, and "needed by" date, status
-    <span class="badge b-amber">Pending</span>. Admin or Manager sees it queue up under "Pending Spare Part
-    Requests" on the Dashboard, orders it, and updates status to <span class="badge b-amber">Ordered</span>
-    then <span class="badge b-green">Received</span> once it arrives. Once it's used on the machine, whoever
-    fits it logs it in <b>Spare Parts — Usage</b> against that machine and date — this is what feeds the
-    "Spare Parts Cost" figure on the Dashboard.</p></div>`;
+    <b>Spare Parts — Requests → + Add</b>, name the part, quantity needed, picks <b>Offset</b> as the
+    Section, selects that specific machine, and sets a "needed by" date, status
+    <span class="badge b-amber">Pending</span>. For a shared or consumable part used across many machines
+    (grease, bolts, a common belt), they still pick the Section but leave Machine blank — that keeps it
+    reportable by department without forcing a single asset. Admin or Manager sees it queue up under
+    "Pending Spare Part Requests" on the Dashboard, orders it, and updates status to
+    <span class="badge b-amber">Ordered</span> then <span class="badge b-green">Received</span> once it
+    arrives (entering the cost per unit at that point). Once it's used on a machine, whoever fits it logs
+    it in <b>Spare Parts — Usage</b> against that machine and date — this is what feeds the "Spare Parts
+    Cost" figure on the Dashboard.</p></div>`;
 
   html += `<div class="panel"><h3>5. Example: Admin sets exactly who can see/edit what</h3>
     <p class="muted" style="font-size:13px; line-height:1.6;">
