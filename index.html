@@ -568,9 +568,9 @@ const MODULES = {
       {name:'machineId', label:'Machine / Utility', type:'select', options:()=>machineOptions(), required:true, list:true},
       {name:'date', label:'Date', type:'date', required:true, list:true, default:()=>todayStr()},
       {name:'startTime', label:'Downtime Start Time', type:'time', list:true,
-        hint:'Optional — fill in both Start and Close time to have Downtime (minutes) calculated for you.'},
+        hint:'Log this the moment it happens. Leave Close Time and Downtime blank until it\'s fixed — come back and edit this record then, and downtime will fill in for you.'},
       {name:'endTime', label:'Downtime Close Time', type:'time', list:true},
-      {name:'downtimeMinutes', label:'Downtime (minutes)', type:'number', required:true, list:true, step:'1', min:'0'},
+      {name:'downtimeMinutes', label:'Downtime (minutes)', type:'number', list:true, step:'1', min:'0'},
       {name:'reason', label:'Reason for Breakdown', type:'textarea', required:true, list:true, filterText:true},
       {name:'assignedTo', label:'Assigned Technician', type:'select', options:()=>userOptions(['Admin','Manager','Technician']), list:true},
       {name:'status', label:'Status', type:'select', options:staticOpts(['Open','In Progress','Resolved']), required:true, list:true, badge:true, default:'Open'},
@@ -900,7 +900,10 @@ function renderModuleTab(moduleKey){
         let val = r[f.name];
         if(f.name==='machineId') val = machineName(val);
         else if(f.options) val = optionLabel(f, val);
-        if(f.badge) html += `<td>${val?badgeHtml(val):'—'}</td>`;
+        if(moduleKey==='breakdown' && f.name==='downtimeMinutes' && (val===''||val===undefined||val===null) && r.status!=='Resolved'){
+          html += `<td><span class="badge b-amber">Ongoing</span></td>`;
+        }
+        else if(f.badge) html += `<td>${val?badgeHtml(val):'—'}</td>`;
         else if(f.type==='date') html += `<td>${fmtDate(val)}</td>`;
         else if(f.type==='time') html += `<td>${fmtTime(val)}</td>`;
         else if(f.type==='textarea') html += `<td class="cell-wrap">${esc(val||'—')}</td>`;
@@ -1545,11 +1548,13 @@ function renderHelpTab(){
   html += `<div class="panel"><h3>2. Example: Operator reports a breakdown</h3>
     <p class="muted" style="font-size:13px; line-height:1.6;">
     Say <b>GTO-1C</b> in the <b>Offset</b> section jams mid-shift. An Operator opens
-    <b>Breakdown & Downtime → + Add Breakdown Report</b>, selects <i>GTO-1C</i>, enters today's date,
-    downtime so far, and a short reason like "Feeder gripper not picking sheet". They save it with status
-    <span class="badge b-red">Open</span>. It now appears on the Dashboard's "Active Breakdowns" panel and in Search & Reports.
-    A Technician later opens the same record, adds what was done under "Action Taken", and changes status to
-    <span class="badge b-green">Resolved</span>.</p></div>`;
+    <b>Breakdown & Downtime → + Add Breakdown Report</b>, selects <i>GTO-1C</i>, enters today's date, the
+    <b>Start Time</b> right now, and a short reason like "Feeder gripper not picking sheet" — leaving Close
+    Time and Downtime blank, since nobody knows yet how long the fix will take. They save it with status
+    <span class="badge b-red">Open</span>; it shows as <span class="badge b-amber">Ongoing</span> in the
+    Downtime column and appears on the Dashboard's "Active Breakdowns" panel. Once it's fixed, a Technician
+    opens the same record, fills in the <b>Close Time</b> — Downtime (minutes) calculates itself — adds what
+    was done under "Action Taken", and changes status to <span class="badge b-green">Resolved</span>.</p></div>`;
 
   html += `<div class="panel"><h3>3. Example: Technician completes a PM task</h3>
     <p class="muted" style="font-size:13px; line-height:1.6;">
