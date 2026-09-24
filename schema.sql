@@ -12,6 +12,21 @@ create table if not exists erp_store (
   updated_at  timestamptz not null default now()
 );
 
+-- Supabase is retiring automatic API grants for new tables from Oct 30, 2026
+-- onward — without these, the app's anon key would get "permission denied"
+-- from the Data API even with the RLS policies below in place. This app only
+-- ever connects with the anon key (it has its own username/password system,
+-- not Supabase Auth), so that's the only role that needs to read/write here;
+-- service_role is granted too since it bypasses RLS anyway and costs nothing
+-- to include, in case you ever run an admin script with it.
+grant select, insert, update, delete
+on public.erp_store
+to anon;
+
+grant select, insert, update, delete
+on public.erp_store
+to service_role;
+
 -- Row Level Security — required by Supabase before any policy takes effect.
 alter table erp_store enable row level security;
 
