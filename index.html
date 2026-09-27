@@ -31,6 +31,7 @@
     background:var(--cream);
     color:var(--ink);
     font-size:14px;
+    overflow-x:hidden;
   }
   h1,h2,h3,h4{font-family:'Georgia', 'Iowan Old Style', serif; margin:0; color:var(--forest); letter-spacing:.2px;}
   a{color:inherit;}
@@ -136,7 +137,7 @@
   .filter-field.grow input{width:100%;}
 
   /* ---------- Table ---------- */
-  .table-wrap{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);}
+  .table-wrap{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); overflow-x:auto; -webkit-overflow-scrolling:touch; box-shadow:var(--shadow);}
   table{width:100%; border-collapse:collapse; font-size:13px;}
   thead th{
     background:var(--mist); color:var(--forest); text-align:left; font-size:11px;
@@ -216,6 +217,14 @@
   }
   .toast.show{opacity:1;}
 
+  /* Smaller laptops / tablets in landscape: trim the sidebar and padding
+     so the main content area (and its tables) has more room, before
+     dropping to the full mobile layout below. */
+  @media (max-width:1150px){
+    .sidebar{width:180px; flex:0 0 180px;}
+    .main{padding:18px 16px 50px;}
+    .side-btn{font-size:13px; padding:8px;}
+  }
   @media (max-width:820px){
     .shell{flex-direction:column;}
     .sidebar{width:100%; flex-direction:row; overflow-x:auto; padding:8px; gap:6px;}
@@ -224,6 +233,17 @@
     .main{padding:16px;}
     .form-grid{grid-template-columns:1fr;}
     .roster-grid{grid-template-columns:1fr;}
+    .topbar{flex-wrap:wrap; row-gap:8px; padding:10px 14px;}
+    .who{flex-wrap:wrap; row-gap:6px;}
+    .cards-grid{grid-template-columns:1fr 1fr;}
+    .modal{padding:18px 16px 16px; max-width:100%;}
+    .filter-field{min-width:0; flex:1 1 130px;}
+    .filter-field input, .filter-field select{min-width:0; width:100%;}
+  }
+  @media (max-width:480px){
+    .cards-grid{grid-template-columns:1fr;}
+    .brand-text .sub{display:none;}
+    .page-head h2{font-size:18px;}
   }
 </style>
 </head>
