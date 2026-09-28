@@ -1634,22 +1634,6 @@ function renderUsersTab(){
   }
   let html = renderModuleTab('users');
 
-  // Team Directory cross-reference — anyone in the (now editable) Team
-  // Directory who doesn't have a login yet, with a one-click "Create Login".
-  const existingNames = new Set(STATE.data.users.map(u=>u.name.toLowerCase()));
-  const notYetAdded = STATE.data.roster.filter(p=>!existingNames.has(p.name.toLowerCase()));
-  if(notYetAdded.length>0 && canCreate('users')){
-    html += `<div class="panel"><h3>Maintenance Team Directory <span class="cnt">(people without a login yet — manage the full list under Master Data → Maintenance Team Directory)</span></h3>`;
-    notYetAdded.forEach((p)=>{
-      html += `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);">
-        <div><b>${esc(p.name)}</b> — ${esc(p.title)} <span class="muted">(${esc(p.phone||'—')})</span>
-          <div class="muted" style="margin-top:3px;max-width:640px;">${esc(p.responsibility||'')}</div></div>
-        <button class="btn btn-sm btn-ghost" style="white-space:nowrap;" onclick="prefillUserFromRoster('${p.id}')">+ Create Login</button>
-      </div>`;
-    });
-    html += `</div>`;
-  }
-
   html += `<div class="panel"><h3>Roles & Access Overview <span class="cnt">(access is grouped into 4 tiers — use the "Access" button on a user to override any individual person)</span></h3>
     <div class="muted" style="margin-bottom:8px;">V = View, A = Add, E = Edit, D = Delete. Green means allowed, grey means not.</div>
     <div class="table-wrap" style="box-shadow:none;">
