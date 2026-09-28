@@ -340,6 +340,48 @@ function fmtTime(t){
 function monthKey(d){ return (d||'').slice(0,7); }
 function esc(s){ return (s===undefined||s===null)?'':String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// ---------- CSV export (opens directly in Excel) ----------
+function toCSVValue(v){
+  if(v===undefined||v===null) return '';
+  const s = String(v);
+  if(/[",\n\r]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+  return s;
+}
+function downloadCSV(rows, filename){
+  const content = rows.map(row=>row.map(toCSVValue).join(',')).join('\r\n');
+  // Leading BOM so Excel opens UTF-8 (e.g. BDT, non-ASCII names) correctly.
+  const blob = new Blob(['\ufeff'+content], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast('Download started: '+filename);
+}
+// Renders one record's full field set as display-ready CSV cell values
+// (resolves machine IDs to names, select values to labels, dates/times to
+// readable text) — used for both per-module and Search & Reports exports.
+function fieldsToCSVRow(mod, r){
+  return mod.fields.filter(f=>f.name!=='password').map(f=>{
+    let val = r[f.name];
+    if(f.name==='machineId') return machineName(val);
+    if(f.options) return optionLabel(f, val);
+    if(f.type==='date') return fmtDate(val);
+    if(f.type==='time') return fmtTime(val);
+    return val;
+  });
+}
+function exportModuleCSV(moduleKey){
+  const mod = MODULES[moduleKey];
+  const rows = applyFilters(moduleKey, getRecords(moduleKey));
+  const header = mod.fields.filter(f=>f.name!=='password').map(f=>f.label).concat(['Entered By','Date Added']);
+  const lines = [header];
+  rows.forEach(r=>{
+    lines.push(fieldsToCSVRow(mod, r).concat([r.createdByName||'', fmtDate(localDateFromTimestamp(r.createdAt))]));
+  });
+  downloadCSV(lines, mod.storageKey+'_'+todayStr()+'.csv');
+}
+
 let toastTimer=null;
 function toast(msg){
   let t = document.getElementById('toastEl');
@@ -871,11 +913,13 @@ function renderModuleTab(moduleKey){
   const listFields = mod.fields.filter(f=>f.list);
 
   let html = `<div class="page-head"><div><h2>${mod.icon} ${mod.label}</h2>
-    <div class="page-sub">${all.length} total record${all.length===1?'':'s'} · showing ${rows.length}</div></div>`;
+    <div class="page-sub">${all.length} total record${all.length===1?'':'s'} · showing ${rows.length}</div></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" onclick="exportModuleCSV('${moduleKey}')" title="Downloads what's currently shown (clear the filters to get everything). Opens in Excel.">⬇ Download Excel/CSV</button>`;
   if(canCreate(moduleKey)){
     html += `<button class="btn btn-primary" onclick="openForm('${moduleKey}', null)">+ Add ${esc(mod.singular)}</button>`;
   }
-  html += `</div><div class="divider"></div>`;
+  html += `</div></div><div class="divider"></div>`;
 
   if(mod.masterData){
     html += `<div class="panel" style="padding:10px 16px; margin-bottom:14px; display:flex; align-items:center; gap:10px;">
@@ -1418,42 +1462,16 @@ function panelList(title, items, lineFn, rightFn){
 }
 
 // ===================== SEARCH / REPORTS =====================
-function renderSearchTab(){
+// Shared by the Search page and its Excel/CSV download so both always match.
+function getSearchResults(){
   const sf = STATE.searchFilters;
   const searchable = Object.keys(MODULES).filter(mk=>mk!=='users' && canView(mk));
-  // "All modules" only sweeps actual day-to-day records (things with a real date).
-  // Master data (Machines, Sections, Spare Parts Catalog, Team Directory) doesn't
-  // have a meaningful date, so it would otherwise flood the top of every search
-  // with today's date. It's still searchable — just pick it from the Module list.
   const searchableDefault = searchable.filter(mk=>!!MODULES[mk].dateField);
-
-  let html = `<div class="page-head"><div><h2>🔍 Search & Reports</h2>
-    <div class="page-sub">Find any record across every maintenance module — by date, section, machine, or user.</div></div></div>
-    <div class="divider"></div>`;
-
-  html += `<div class="filter-bar">
-    <div class="filter-field"><label>Module</label><select onchange="sf('module',this.value)">
-      <option value="all" ${sf.module==='all'?'selected':''}>All modules</option>
-      ${searchable.map(mk=>`<option value="${mk}" ${sf.module===mk?'selected':''}>${MODULES[mk].label}</option>`).join('')}
-    </select></div>
-    <div class="filter-field"><label>From</label><input type="date" value="${esc(sf.from)}" onchange="sf('from',this.value)"></div>
-    <div class="filter-field"><label>To</label><input type="date" value="${esc(sf.to)}" onchange="sf('to',this.value)"></div>
-    <div class="filter-field"><label>Section</label><select onchange="sf('section',this.value)">
-      <option value="">All sections</option>
-      ${sectionOptions().map(o=>`<option value="${esc(o.value)}" ${sf.section===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}
-    </select></div>
-    <div class="filter-field"><label>Machine</label><select onchange="sf('machine',this.value)">
-      <option value="">All machines</option>
-      ${machineOptions().map(o=>`<option value="${esc(o.value)}" ${sf.machine===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}
-    </select></div>
-    <div class="filter-field grow"><label>Keyword</label><input type="text" placeholder="Search reason, description, part name…" value="${esc(sf.q)}" oninput="sf('q',this.value)"></div>
-    <button class="btn btn-ghost btn-sm" onclick="clearSearch()">Clear</button>
-  </div>`;
-
   const modulesToSearch = sf.module==='all' ? searchableDefault : [sf.module];
   let results = [];
   modulesToSearch.forEach(mk=>{
     const mod = MODULES[mk];
+    if(!mod || !canView(mk)) return;
     let recs = STATE.data[mod.storageKey];
     recs = recs.filter(r=>{
       if(sf.machine && mod.machineField && r[mod.machineField]!==sf.machine) return false;
@@ -1477,6 +1495,110 @@ function renderSearchTab(){
     const db = b.r[b.mod.dateField]||b.r.createdAt||'';
     return String(db).localeCompare(String(da));
   });
+  return results;
+}
+
+// ---------- Excel / CSV download ----------
+// Produces a .csv file (with a UTF-8 marker so Excel opens it cleanly, including
+// Bengali/other non-English text). Every module page downloads whatever it is
+// currently showing — clear the filters first to get everything.
+function csvCell(v){
+  if(v===undefined || v===null) return '';
+  let s = String(v);
+  // Stop Excel treating text that starts with = + - @ as a formula
+  if(/^[=+\-@]/.test(s) && isNaN(Number(s))) s = "'" + s;
+  return /[",\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+}
+function downloadCSV(lines, filename){
+  const blob = new Blob(['\ufeff'+lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function exportFieldValue(f, r){
+  let val = r[f.name];
+  if(f.name==='machineId') return machineName(val)==='—' ? '' : machineName(val);
+  if(f.options) return optionLabel(f, val);
+  if(f.type==='date') return val ? fmtDate(val) : '';
+  if(f.type==='time') return val ? fmtTime(val) : '';
+  return val;
+}
+function exportModuleCSV(moduleKey){
+  const mod = MODULES[moduleKey];
+  if(!mod || !canView(moduleKey)) return;
+  const rows = applyFilters(moduleKey, getRecords(moduleKey));
+  if(rows.length===0){ toast('Nothing to download — no records match the current filters.'); return; }
+  // Passwords are never exported.
+  const fields = mod.fields.filter(f=>f.name!=='password');
+  const isStock = moduleKey==='stock';
+  const headers = fields.map(f=>f.label);
+  if(isStock) headers.push('Consumed','Remaining');
+  if(mod.machineField) headers.splice(1,0,'Section');
+  headers.push('Entered By','Date Added','Last Edited By');
+  const lines = [headers.map(csvCell).join(',')];
+  rows.forEach(r=>{
+    const vals = fields.map(f=>exportFieldValue(f, r));
+    if(isStock){
+      const consumed = partConsumedQty(r.partName);
+      vals.push(consumed, (Number(r.qtyInStock)||0) - consumed);
+    }
+    if(mod.machineField) vals.splice(1,0,recordSection(mod, r));
+    vals.push(r.createdByName||'', localDateFromTimestamp(r.createdAt), r.updatedBy||'');
+    lines.push(vals.map(csvCell).join(','));
+  });
+  const name = mod.label.replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
+  downloadCSV(lines, name+'_'+todayStr()+'.csv');
+  toast(rows.length+' record'+(rows.length===1?'':'s')+' downloaded.');
+}
+function exportSearchCSV(){
+  const results = getSearchResults();
+  if(results.length===0){ toast('Nothing to download — no records match these filters.'); return; }
+  const headers = ['Module','Date','Section','Machine','Summary','Status','Entered By','Date Added'];
+  const lines = [headers.map(csvCell).join(',')];
+  results.forEach(({mod,r})=>{
+    const dateVal = mod.dateField ? r[mod.dateField] : localDateFromTimestamp(r.createdAt);
+    const summaryField = mod.fields.find(f=>f.filterText) || mod.fields.find(f=>f.type==='textarea') || mod.fields[0];
+    const machine = mod.machineField && machineName(r[mod.machineField])!=='—' ? machineName(r[mod.machineField]) : '';
+    lines.push([
+      mod.label, dateVal ? fmtDate(dateVal) : '', recordSection(mod, r), machine,
+      r[summaryField.name]||'', r.status||'', r.createdByName||'', localDateFromTimestamp(r.createdAt)
+    ].map(csvCell).join(','));
+  });
+  downloadCSV(lines, 'Search_Results_'+todayStr()+'.csv');
+  toast(results.length+' record'+(results.length===1?'':'s')+' downloaded.');
+}
+
+function renderSearchTab(){
+  const sf = STATE.searchFilters;
+  const searchable = Object.keys(MODULES).filter(mk=>mk!=='users' && canView(mk));
+
+  let html = `<div class="page-head"><div><h2>🔍 Search & Reports</h2>
+    <div class="page-sub">Find any record across every maintenance module — by date, section, machine, or user.</div></div>
+    <button class="btn" onclick="exportSearchCSV()" title="Downloads every result below (not just the first 300). Opens in Excel.">⬇ Download Excel/CSV</button></div>
+    <div class="divider"></div>`;
+
+  html += `<div class="filter-bar">
+    <div class="filter-field"><label>Module</label><select onchange="sf('module',this.value)">
+      <option value="all" ${sf.module==='all'?'selected':''}>All modules</option>
+      ${searchable.map(mk=>`<option value="${mk}" ${sf.module===mk?'selected':''}>${MODULES[mk].label}</option>`).join('')}
+    </select></div>
+    <div class="filter-field"><label>From</label><input type="date" value="${esc(sf.from)}" onchange="sf('from',this.value)"></div>
+    <div class="filter-field"><label>To</label><input type="date" value="${esc(sf.to)}" onchange="sf('to',this.value)"></div>
+    <div class="filter-field"><label>Section</label><select onchange="sf('section',this.value)">
+      <option value="">All sections</option>
+      ${sectionOptions().map(o=>`<option value="${esc(o.value)}" ${sf.section===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}
+    </select></div>
+    <div class="filter-field"><label>Machine</label><select onchange="sf('machine',this.value)">
+      <option value="">All machines</option>
+      ${machineOptions().map(o=>`<option value="${esc(o.value)}" ${sf.machine===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}
+    </select></div>
+    <div class="filter-field grow"><label>Keyword</label><input type="text" placeholder="Search reason, description, part name…" value="${esc(sf.q)}" oninput="sf('q',this.value)"></div>
+    <button class="btn btn-ghost btn-sm" onclick="clearSearch()">Clear</button>
+  </div>`;
+
+  const results = getSearchResults();
 
   html += `<div class="table-wrap"><table><thead><tr><th>Module</th><th>Date</th><th>Section</th><th>Machine</th><th>Summary</th><th>Status</th><th>By</th></tr></thead><tbody>`;
   if(results.length===0){
