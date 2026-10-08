@@ -627,14 +627,13 @@ const MODULES = {
     singular:'Breakdown Report',
     machineField:'machineId', dateField:'date',
     fields:[
-      {name:'machineId', label:'Machine / Utility', type:'select', options:()=>machineOptions(), required:true, list:true},
-      {name:'date', label:'Date', type:'date', required:true, list:true, default:()=>todayStr()},
-      {name:'startTime', label:'Downtime Start Time', type:'time', list:true,
-        hint:'Log this the moment it happens. Leave Resolved Date, Close Time and Downtime blank until it\'s fixed — come back and edit this record then, and downtime will fill in for you.'},
-      {name:'resolvedDate', label:'Resolved Date', type:'date', list:true,
-        hint:'The date the machine was back running. Can be a later day than the breakdown date — downtime counts every hour in between.'},
-      {name:'endTime', label:'Downtime Close Time', type:'time', list:true},
-      {name:'downtimeMinutes', label:'Downtime (minutes)', type:'number', list:true, step:'1', min:'0'},
+      {name:'machineId', label:'Machine / Utility', type:'select', options:()=>machineOptions(), required:true, list:true, full:true},
+      {name:'date', label:'Downtime Start Date', type:'date', required:true, list:true, default:()=>todayStr()},
+      {name:'startTime', label:'Downtime Start Time', type:'time', list:true},
+      {name:'resolvedDate', label:'Resolved Date', type:'date', list:true},
+      {name:'endTime', label:'Resolved Time', type:'time', list:true},
+      {name:'downtimeMinutes', label:'Total Downtime (minutes)', type:'number', list:true, step:'1', min:'0', full:true,
+        hint:'Calculated automatically from Start Date + Start Time to Resolved Date + Resolved Time — e.g. 30 Sep 10:00 → 2 Oct 14:00 = 52h. Leave Resolved Date and Time blank until it\'s fixed, then edit this record.'},
       {name:'reason', label:'Reason for Breakdown', type:'textarea', required:true, list:true, filterText:true},
       {name:'assignedTo', label:'Assigned Technician', type:'select', options:()=>userOptions(['Admin','Manager','Technician']), list:true},
       {name:'status', label:'Status', type:'select', options:staticOpts(['Open','In Progress','Resolved']), required:true, list:true, badge:true, default:'Open'},
@@ -1016,7 +1015,7 @@ function openForm(moduleKey, recordId){
 
   mod.fields.forEach(f=>{
     const val = rec ? rec[f.name] : (typeof f.default==='function' ? f.default() : (f.default!==undefined ? f.default : ''));
-    const full = f.type==='textarea';
+    const full = f.type==='textarea' || f.full;
     const labelId = (moduleKey==='sparereq' && f.name==='unitCost') ? ' id="unitCostLabel"' : '';
     html += `<div class="field ${full?'full':''}"><label${labelId}>${esc(f.label)} ${f.required && !(f.name==='password'&&rec)?'<span class="req">*</span>':''}</label>`;
     if(f.name==='password'){
@@ -1109,7 +1108,7 @@ async function submitForm(e){
   if(moduleKey==='breakdown'){
     const mins = calcBreakdownMinutes(fd.get('date'), fd.get('startTime'), fd.get('resolvedDate'), fd.get('endTime'));
     if(mins!==null && mins<0){
-      toast('Resolved date / close time is before the downtime start — please check the dates.');
+      toast('Resolved date / time is before the downtime start — please check the dates.');
       return;
     }
     if(mins!==null) fd.set('downtimeMinutes', String(mins));
@@ -1246,7 +1245,7 @@ function updateBreakdownDowntime(changed){
   if(minutes < 0){
     minIn.value = '';
     warn.style.color = '#c0392b';
-    warn.textContent = 'Resolved date / close time is before the start — please check the dates.';
+    warn.textContent = 'Resolved date / time is before the start — please check the dates.';
     return;
   }
   minIn.value = minutes;
@@ -1725,11 +1724,11 @@ function renderHelpTab(){
     <p class="muted" style="font-size:13px; line-height:1.6;">
     Say <b>GTO-1C</b> in the <b>Offset</b> section jams mid-shift. An Operator opens
     <b>Breakdown & Downtime → + Add Breakdown Report</b>, selects <i>GTO-1C</i>, enters today's date, the
-    <b>Start Time</b> right now, and a short reason like "Feeder gripper not picking sheet" — leaving Close
-    Time and Downtime blank, since nobody knows yet how long the fix will take. They save it with status
+    <b>Start Time</b> right now, and a short reason like "Feeder gripper not picking sheet" — leaving Resolved
+    Date, Resolved Time and Downtime blank, since nobody knows yet how long the fix will take. They save it with status
     <span class="badge b-red">Open</span>; it shows as <span class="badge b-amber">Ongoing</span> in the
     Downtime column and appears on the Dashboard's "Active Breakdowns" panel. Once it's fixed, a Technician
-    opens the same record, fills in the <b>Resolved Date</b> and <b>Close Time</b> — Downtime (minutes) calculates itself, even across several days — adds what
+    opens the same record, fills in the <b>Resolved Date</b> and <b>Resolved Time</b> — Downtime (minutes) calculates itself, even across several days — adds what
     was done under "Action Taken", and changes status to <span class="badge b-green">Resolved</span>.</p></div>`;
 
   html += `<div class="panel"><h3>3. Example: Technician completes a PM task</h3>
