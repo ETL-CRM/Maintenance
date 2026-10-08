@@ -630,14 +630,15 @@ const MODULES = {
       {name:'machineId', label:'Machine / Utility', type:'select', options:()=>machineOptions(), required:true, list:true},
       {name:'date', label:'Date', type:'date', required:true, list:true, default:()=>todayStr()},
       {name:'startTime', label:'Downtime Start Time', type:'time', list:true,
-        hint:'Log this the moment it happens. Leave Close Time and Downtime blank until it\'s fixed — come back and edit this record then, and downtime will fill in for you.'},
+        hint:'Log this the moment it happens. Leave Resolved Date, Close Time and Downtime blank until it\'s fixed — come back and edit this record then, and downtime will fill in for you.'},
+      {name:'resolvedDate', label:'Resolved Date', type:'date', list:true,
+        hint:'The date the machine was back running. Can be a later day than the breakdown date — downtime counts every hour in between.'},
       {name:'endTime', label:'Downtime Close Time', type:'time', list:true},
       {name:'downtimeMinutes', label:'Downtime (minutes)', type:'number', list:true, step:'1', min:'0'},
       {name:'reason', label:'Reason for Breakdown', type:'textarea', required:true, list:true, filterText:true},
       {name:'assignedTo', label:'Assigned Technician', type:'select', options:()=>userOptions(['Admin','Manager','Technician']), list:true},
       {name:'status', label:'Status', type:'select', options:staticOpts(['Open','In Progress','Resolved']), required:true, list:true, badge:true, default:'Open'},
-      {name:'actionTaken', label:'Action Taken', type:'textarea'},
-      {name:'resolvedDate', label:'Resolved Date', type:'date'}
+      {name:'actionTaken', label:'Action Taken', type:'textarea'}
     ]
   },
   stock:{
@@ -1034,7 +1035,7 @@ function openForm(moduleKey, recordId){
     } else {
       let autoCalc = '';
       if(moduleKey==='spareuse' && f.name==='qtyUsed') autoCalc = ' oninput="updateSpareUseCost()"';
-      if(moduleKey==='breakdown' && (f.name==='startTime' || f.name==='endTime')) autoCalc = ' onchange="updateBreakdownDowntime()"';
+      if(moduleKey==='breakdown' && ['date','startTime','resolvedDate','endTime'].includes(f.name)) autoCalc = ' onchange="updateBreakdownDowntime(this.name)"';
       html += `<input type="${f.type}" name="${f.name}" value="${esc(val)}" ${f.step?('step="'+f.step+'"'):''} ${f.min!==undefined?('min="'+f.min+'"'):''} ${f.required?'required':''}${autoCalc}>`;
     }
     if(f.name==='cost' && moduleKey==='spareuse'){
@@ -1103,6 +1104,15 @@ async function submitForm(e){
       toast('Please enter the cost per unit before marking this request as Received.');
       return;
     }
+  }
+
+  if(moduleKey==='breakdown'){
+    const mins = calcBreakdownMinutes(fd.get('date'), fd.get('startTime'), fd.get('resolvedDate'), fd.get('endTime'));
+    if(mins!==null && mins<0){
+      toast('Resolved date / close time is before the downtime start — please check the dates.');
+      return;
+    }
+    if(mins!==null) fd.set('downtimeMinutes', String(mins));
   }
 
   const wasReceived = rec && rec.status==='Received';
@@ -1185,23 +1195,63 @@ function updateSpareUseCost(){
   }
 }
 
-// Auto-fills Downtime (minutes) on the Breakdown form once both Start and
-// Close time are set. Handles downtime that crosses midnight (close time
-// earlier than start time) by wrapping to the next day.
-function updateBreakdownDowntime(){
+// Downtime in minutes from (start date + start time) to (resolved date +
+// close time). Returns null if anything is missing, or a negative number if
+// the close is before the start. Older records with no Resolved Date fall
+// back to the same day, wrapping past midnight.
+function calcBreakdownMinutes(date, startTime, resolvedDate, endTime){
+  if(!date || !startTime || !endTime) return null;
+  const toMs = (d,t)=>{
+    const [y,mo,da] = d.split('-').map(Number);
+    const [h,mi] = t.split(':').map(Number);
+    return Date.UTC(y, mo-1, da, h, mi);
+  };
+  if(resolvedDate){
+    return Math.round((toMs(resolvedDate,endTime) - toMs(date,startTime)) / 60000);
+  }
+  let minutes = toMs(date,endTime) - toMs(date,startTime);
+  minutes = Math.round(minutes/60000);
+  if(minutes < 0) minutes += 24*60; // no resolved date: assume it ran past midnight
+  return minutes;
+}
+function addDaysStr(d, n){
+  const [y,mo,da] = d.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, mo-1, da+n));
+  return dt.toISOString().slice(0,10);
+}
+
+// Auto-fills Downtime (minutes) on the Breakdown form from the full start
+// date/time to the resolved date/close time, so breakdowns that run over
+// several days are counted correctly.
+function updateBreakdownDowntime(changed){
   const form = document.getElementById('entityForm');
   if(!form) return;
-  const startInput = form.querySelector('[name=startTime]');
-  const endInput = form.querySelector('[name=endTime]');
-  const minInput = form.querySelector('[name=downtimeMinutes]');
-  if(!startInput || !endInput || !minInput) return;
-  const start = startInput.value, end = endInput.value;
-  if(!start || !end) return;
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  let minutes = (eh*60+em) - (sh*60+sm);
-  if(minutes < 0) minutes += 24*60; // downtime ran past midnight
-  minInput.value = minutes;
+  const q = n=>form.querySelector('[name='+n+']');
+  const dateIn=q('date'), startIn=q('startTime'), resIn=q('resolvedDate'), endIn=q('endTime'), minIn=q('downtimeMinutes');
+  if(!dateIn || !startIn || !resIn || !endIn || !minIn) return;
+  // First time a Close Time is entered with no Resolved Date, fill the date
+  // in: same day, or next day if the close time is earlier than the start.
+  if(changed==='endTime' && !resIn.value && dateIn.value && endIn.value){
+    resIn.value = (startIn.value && endIn.value < startIn.value) ? addDaysStr(dateIn.value,1) : dateIn.value;
+  }
+  let warn = document.getElementById('downtimeWarn');
+  if(!warn){
+    warn = document.createElement('div');
+    warn.id = 'downtimeWarn'; warn.className = 'field-hint';
+    minIn.parentNode.appendChild(warn);
+  }
+  warn.textContent = '';
+  const minutes = calcBreakdownMinutes(dateIn.value, startIn.value, resIn.value, endIn.value);
+  if(minutes===null) return;
+  if(minutes < 0){
+    minIn.value = '';
+    warn.style.color = '#c0392b';
+    warn.textContent = 'Resolved date / close time is before the start — please check the dates.';
+    return;
+  }
+  minIn.value = minutes;
+  warn.textContent = minutes >= 60 ? '= '+fmtMinutes(minutes) : '';
+  warn.style.color = '';
 }
 
 async function deleteRecord(moduleKey, id){
@@ -1679,7 +1729,7 @@ function renderHelpTab(){
     Time and Downtime blank, since nobody knows yet how long the fix will take. They save it with status
     <span class="badge b-red">Open</span>; it shows as <span class="badge b-amber">Ongoing</span> in the
     Downtime column and appears on the Dashboard's "Active Breakdowns" panel. Once it's fixed, a Technician
-    opens the same record, fills in the <b>Close Time</b> — Downtime (minutes) calculates itself — adds what
+    opens the same record, fills in the <b>Resolved Date</b> and <b>Close Time</b> — Downtime (minutes) calculates itself, even across several days — adds what
     was done under "Action Taken", and changes status to <span class="badge b-green">Resolved</span>.</p></div>`;
 
   html += `<div class="panel"><h3>3. Example: Technician completes a PM task</h3>
